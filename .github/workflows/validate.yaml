@@ -27,7 +27,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cloud-init python3-yaml
-          python3 -m pip install --user ansible-core ansible-lint
+          # pipx, not pip --user: a --user-site jsonschema shadows the system
+          # one and crashes the runner's cloud-init (`schema` hits a
+          # registry= kwarg mismatch). pipx keeps ansible's deps in their own
+          # venvs; ansible-lint pulls ansible-core into its venv itself.
+          pipx install ansible-core
+          pipx install ansible-lint
 
       - name: tofu init and validate
         run: |
