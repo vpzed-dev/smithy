@@ -1,0 +1,41 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      # Read-only rendering only: satisfies the state-encryption config and
+      # its >=16-char validation. No state is created or read in CI.
+      TF_VAR_state_passphrase: ci-dummy-passphrase-render-only
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+
+      - name: Install validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cloud-init python3-yaml
+          python3 -m pip install --user ansible-core ansible-lint
+
+      - name: tofu init and validate
+        run: |
+          tofu init -input=false
+          tofu validate
+
+      - name: check-cloud-init
+        run: ./scripts/check-cloud-init.sh
+
+      # check-ansible.sh needs an applied tofu state (it inspects the live
+      # dynamic inventory), so CI runs only its state-independent parts.
+      - name: ansible syntax check
+        run: ansible-playbook ansible/site.yaml --syntax-check -i localhost,
+
+      - name: ansible-lint
+        working-directory: ansible
+        run: ansible-lint
