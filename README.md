@@ -83,11 +83,31 @@ overall testing workflow.
                            # CLI workspace)
 ```
 
+For opentofu and ansible, copy these files and fill them in:
+- `cp guards.tofu.example guards.tofu`
+- `cp variables.tofu.example variables.tofu`
+- `cp .sops.yaml.example .sops.yaml`
+- `cp inventory-example.yaml inventory/<vm_name>.yaml`
+
 The two container directories are deployments that run on a persistent backend 
 system NOT on a test VM. In the reference implementation they are running on the
 same system that is running opentofu and ansible, but that is not required.
-Copy `.env.example` to `.env` and review docker-compose.yaml. All `.env`
-files are gitignored.
+
+For otel-lgtm container:
+- `cd otel-lgtm && cp .env.example .env`
+- Review docker-compose.yaml
+- `docker compose up -d`
+
+For windmill container:
+- `cd windmill && cp .env.example .env`
+- Review docker-compose.yaml
+- `docker compose up -d`
+
+For windmill local development:
+- `cd windmill/local-dev && cp wmill.yaml.example wmill.yaml`
+- Review windmill.dev documentation on [local development](https://www.windmill.dev/docs/advanced/local_development)
+
+NOTE: All `.env` files are gitignored.
 
 ## Prerequisites
 
