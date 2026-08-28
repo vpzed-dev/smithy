@@ -20,8 +20,8 @@ locals {
   ]
 }
 
-module "vm" {
-  source   = "./modules/vm"
+module "vm-pve" {
+  source   = "./modules/vm-pve"
   for_each = local.vms
 
   vm_name = each.key

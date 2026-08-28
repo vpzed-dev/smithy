@@ -1,4 +1,4 @@
-# modules/vm/main.tofu
+# modules/vm-pve/main.tofu
 
 locals {
   fqdn = var.spec.dns_domain == null ? var.vm_name : "${var.vm_name}.${var.spec.dns_domain}"

@@ -22,10 +22,10 @@
 #
 # The output is named for both the upstream serial and the archive snapshot it
 # was built against, and an uploaded image is never overwritten: disk file_id
-# is under ignore_changes in modules/vm, so a new name is a no-op for running
-# VMs while an in-place replacement would silently change what they were built
-# from. Build a new name, repoint cloud_image_file_id, delete the old volume by
-# hand once nothing references it.
+# is under ignore_changes in modules/vm-pve, so a new name is a no-op for
+# running VMs while an in-place replacement would silently change what they
+# were built from. Build a new name, repoint cloud_image_file_id, delete the
+# old volume by hand once nothing references it.
 
 set -euo pipefail
 

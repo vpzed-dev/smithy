@@ -1,4 +1,4 @@
-# modules/vm/variables.tofu
+# modules/vm-pve/variables.tofu
 
 variable "vm_name" {
   description = "VM name, also used as the guest hostname. Comes from the inventory file name."

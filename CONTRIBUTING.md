@@ -64,5 +64,5 @@ Notes on the two check scripts:
 - Ansible role names use underscores; each is a directory under
   `ansible/roles/`. Pin software versions in the role's `defaults/main.yaml`.
 - Keep guard behavior intact: `guards.tofu` and the validations in
-  `modules/vm/variables.tofu` exist to protect pre-existing VMs and must not
+  `modules/vm-pve/variables.tofu` exist to protect pre-existing VMs and must not
   be weakened.

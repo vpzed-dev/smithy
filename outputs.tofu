@@ -8,7 +8,7 @@ output "nodes" {
 output "vms" {
   description = "Provisioned VMs, keyed by inventory name."
   value = {
-    for name, vm in module.vm : name => {
+    for name, vm in module.vm-pve : name => {
       vm_id          = vm.vm_id
       ipv4_addresses = vm.ipv4_addresses
       ssh_command    = vm.ssh_command

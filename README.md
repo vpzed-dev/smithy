@@ -26,7 +26,7 @@ overall testing workflow.
 - **One YAML file per VM.** Provisioning is adding a file to `inventory/`;
   deprovisioning is deleting one, or moving it to the destroy subdiredtory. 
   Only `vm_id` is required — everything else inherits a typed `optional()` 
-  default from the `spec` contract in `modules/vm/variables.tofu`.
+  default from the `spec` contract in `modules/vm-pve/variables.tofu`.
 - **Repeatable environments.** Per-VM `archive_snapshot:` pins apt to
   [snapshot.ubuntu.com](https://snapshot.ubuntu.com) at a chosen instant, so
   package installs resolve identically forever; `package_upgrade` defaults to
@@ -60,10 +60,10 @@ overall testing workflow.
 ├── versions.tofu  providers.tofu  encryption.tofu
 ├── main.tofu              # sops secrets, node data source
 ├── guards.tofu            # protected VMIDs + live foreign-VM lookup   [EDIT]
-├── vms.tofu               # inventory/ -> module.vm, for_each
+├── vms.tofu               # inventory/ -> module.vm-pve, for_each
 ├── variables.tofu         # fleet-wide defaults                        [EDIT]
 ├── outputs.tofu
-├── modules/vm/            # the contract: what a VM is
+├── modules/vm-pve/        # the contract: what a VM is
 ├── cloud-init/
 │   ├── base.yaml.tftpl            # every VM gets this - the whole document
 │   └── base.runcmd.json.tftpl     # commands every VM runs
@@ -296,7 +296,7 @@ can never be the SSH identity — that split is structural, not a choice.
 
 ## Protecting pre-existing VMs
 
-Three plan-time layers in `guards.tofu` + `modules/vm/main.tofu`
+Three plan-time layers in `guards.tofu` + `modules/vm-pve/main.tofu`
 (preconditions, not `check` blocks — they fail the plan rather than warn):
 
 1. **VMID floor** — managed VMs live at or above `managed_vmid_min`.

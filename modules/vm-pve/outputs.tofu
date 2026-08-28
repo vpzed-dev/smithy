@@ -1,4 +1,4 @@
-# modules/vm/outputs.tofu
+# modules/vm-pve/outputs.tofu
 
 output "vm_id" {
   description = "VMID of the provisioned VM."

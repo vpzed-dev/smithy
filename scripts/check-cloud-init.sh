@@ -66,7 +66,7 @@ render() {
 }
 
 # The runcmd list a VM actually gets, built from the same file
-# modules/vm/main.tofu reads.
+# modules/vm-pve/main.tofu reads.
 runcmd_expr() {
   printf '%s' 'jsondecode(templatefile("./cloud-init/base.runcmd.json.tftpl", { ci_user = "ubuntu", vm_name = "checkvm" }))'
 }

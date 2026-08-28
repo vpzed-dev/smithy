@@ -21,7 +21,7 @@ Template placeholders — fill in for your site (marked `EDIT` in the code):
 ## Hard rules
 
 **Pre-existing VMs must never be touched.** `guards.tofu` plus lifecycle
-preconditions in `modules/vm/main.tofu` enforce a VMID floor, a named protected
+preconditions in `modules/vm-pve/main.tofu` enforce a VMID floor, a named protected
 list, and a live check that rejects any VMID belonging to a VM not tagged
 `opentofu`. Validations stop the floor and the list from being weakened by
 tfvars or `TF_VAR_*` overrides, and a postcondition fails the plan if the
@@ -46,7 +46,7 @@ scanned; subdirectories are invisible). The next apply destroys the VM, its
 disk, and its snippet; moving the file back provisions a *fresh* VM. To keep a
 VM and its data but power it off, set `started: false` instead. The filename
 is the VM name (DNS label). Only `vm_id` is required — everything else takes
-an `optional()` default from the `spec` object in `modules/vm/variables.tofu`,
+an `optional()` default from the `spec` object in `modules/vm-pve/variables.tofu`,
 which is the contract worth reading first.
 
 After touching anything under `cloud-init/`, run
@@ -124,7 +124,7 @@ Rebuild verification: capture, commit, destroy + reprovision, run
 - **`cloud-init schema` catches deprecations that still "work."** The check
   script treats deprecation warnings as failures.
 - **A child module must declare its own `required_providers`** naming
-  `bpg/proxmox`. Without `modules/vm/versions.tofu`, `tofu init` assumes
+  `bpg/proxmox`. Without `modules/vm-pve/versions.tofu`, `tofu init` assumes
   `hashicorp/proxmox` and fails.
 - **`agent { enabled = true }` makes apply block** until the guest agent
   reports an address. Quick with the default `package_upgrade: false`; with a
