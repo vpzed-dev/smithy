@@ -14,6 +14,13 @@ output "vms" {
       ssh_command    = vm.ssh_command
       ansible_roles  = vm.ansible_roles
       ansible_user   = var.ci_user
+
+      # Layer 2 inputs: ansible/inventory/tofu.py turns these into hostvars,
+      # and the base role applies them. They are here rather than in the
+      # cloud-init drive because ansible can re-apply them to a running VM.
+      packages         = vm.packages
+      archive_snapshot = vm.archive_snapshot
+      timezone         = var.ci_timezone
     }
   }
 }
