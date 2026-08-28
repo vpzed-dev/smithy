@@ -112,6 +112,32 @@ Rebuild verification: capture, commit, destroy + reprovision, run
 - **An `@pve`-realm token cannot SSH anywhere.** It exists only in ProxMox's
   user database — it is not a Linux account. Worth knowing before anyone
   proposes reuniting the API and SSH identities to bring snippets back.
+- **A disk `file_id` needs SSH; `import_from` does not.** Sourcing a disk from
+  `file_id` sends the provider down its "custom disk" path, which shells out
+  to `qm` on the node as root. That is a second SSH dependency, quite separate
+  from snippets, and it fails at *disk creation* with "unable to authenticate
+  user over SSH". `import_from` passes PVE's native import-from parameter
+  instead. It only accepts `images` or `import` content — never `iso` — and
+  the upload endpoint restricts `import` filenames to
+  `.ova/.qcow2/.raw/.vmdk` (`UPLOAD_IMPORT_EXT_RE_1` in `PVE/Storage.pm`).
+  Hence `local:import/<name>.qcow2`: the extension is load-bearing.
+- **`sshd_config.d` takes the FIRST value, apt.conf.d takes the last.** The
+  include glob is read in lexical order, so a *lower* number wins. The base
+  role's drop-in is `10-smithy.conf` for that reason; the image's own
+  `60-cloudimg-settings.conf` would otherwise be authoritative.
+- **`cloud-init status` exits 2 on "degraded done".** Under a `set -e` that is
+  a silent, message-free abort — it cost a debugging session in
+  `vm-fingerprint.sh`. Degraded is the *steady state* here: the user-data PVE
+  generates uses the top-level `user:` key, deprecated in cloud-init 22.2.
+  Nothing in this repo emits it and nothing here can suppress it.
+- **Pick the guest address by MAC, not by filtering.** The agent reports one
+  address list per interface, with `ipv4_addresses`, `mac_addresses` and
+  `network_interface_names` sharing an index. Flattening them was fine until
+  the docker role added a `docker0` at 172.17.0.1, which the ansible inventory
+  could have taken as `ansible_host`. `modules/vm-pve/outputs.tofu` selects the
+  entry whose MAC is `network_device[0].mac_address`; address ranges are
+  configurable and interface names vary by image, but that MAC cannot be
+  impersonated by a bridge the guest brought up itself.
 - **`filename=@` must be the last `-F` in a PVE upload.** PVE parses the
   multipart body in order and streams everything after the file part into the
   file. A `checksum` field placed after it is never parsed *and* its bytes are

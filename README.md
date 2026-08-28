@@ -293,8 +293,8 @@ declarative grammar as the rest of the repo:
 - **The `base` role is implicit.** No spec lists it and none can opt out:
   `site.yaml` applies it to every host via `roles:`, ahead of the include
   loop. It owns the apt snapshot pin, the `APT::Periodic` zeros, the masked
-  apt-daily timers, the timezone, and the spec's `packages:` — the apt
-  baseline that used to be cloud-init's, now re-appliable to a running VM.
+  apt-daily timers, key-only SSH, the timezone, and the spec's `packages:` —
+  the baseline that used to be cloud-init's, now re-appliable to a running VM.
 - **Collections are pinned** in `ansible/requirements.yml`, and CI installs
   from it. `ansible-core` ships none, so a `community.*` task without an entry
   there passes locally and fails in CI.

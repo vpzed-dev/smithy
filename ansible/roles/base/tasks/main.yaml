@@ -62,6 +62,33 @@
         - apt-daily.timer
         - apt-daily-upgrade.timer
 
+    # Key-only SSH used to be cloud-init's doing (ssh_pwauth: false, which
+    # wrote 50-cloud-init.conf). PVE's generated user-data has no equivalent,
+    # so without this the guarantee would rest entirely on the cloud image
+    # happening to ship 60-cloudimg-settings.conf - true today, and not
+    # something this repo would notice losing.
+    #
+    # 10-, because sshd takes the FIRST value it obtains for a keyword and
+    # reads the include glob in lexical order: a lower number wins, which is
+    # the opposite of apt.conf.d. KbdInteractiveAuthentication is included
+    # because disabling PasswordAuthentication alone still leaves a PAM
+    # keyboard-interactive path to password login.
+    - name: Enforce key-only SSH
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-smithy.conf
+        content: |
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+        mode: "0644"
+      notify: Reload sshd
+
+    # Validates the whole assembled config, not just the fragment above. It
+    # runs before the handler flushes, so a bad config fails the play with the
+    # running sshd still on its old configuration.
+    - name: Check the assembled sshd config is valid
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+
     - name: Set the timezone
       community.general.timezone:
         name: "{{ vm_timezone }}"

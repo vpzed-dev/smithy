@@ -9,7 +9,8 @@ reshapes `tofu output -json vms` into inventory JSON:
   - one host per VM, named by inventory name (so --limit <name> works)
   - group "vms" holding every reachable VM
   - one group per declared role, for ad-hoc targeting (ansible bun -m ...)
-  - hostvars: ansible_host (first agent-reported IPv4), ansible_user,
+  - hostvars: ansible_host (the VM's own NIC, per the module output),
+    ansible_user,
     vm_id, vm_ansible_roles (what site.yaml applies), and the three the base
     role consumes: vm_packages, vm_archive_snapshot (may be None), vm_timezone
 
