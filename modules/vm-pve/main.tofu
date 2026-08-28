@@ -41,14 +41,18 @@ resource "proxmox_virtual_environment_vm" "this" {
   scsi_hardware = "virtio-scsi-single"
   boot_order    = ["scsi0"]
 
-  # Pointing file_id at the existing image makes ProxMox import and convert it
-  # into the target datastore; the source image is left untouched. file_id is
-  # ignore_changes'd below: it only matters at creation, and without that a
-  # bump of the fleet-wide cloud_image_file_id would diff - and destroy/create
-  # - every existing VM's disk at once.
+  # import_from, not file_id. Both make ProxMox import and convert the image
+  # into the target datastore and leave the source untouched, but file_id goes
+  # through the provider's "custom disk" path, which shells out to `qm` over
+  # SSH as root - the very dependency this design removes. import_from uses
+  # PVE's native import-from API parameter instead.
+  #
+  # It is create-only (the provider ignores later changes) and ignore_changes'd
+  # anyway: without that, bumping the fleet-wide cloud_image_file_id would diff
+  # - and destroy/create - every existing VM's disk at once.
   disk {
     datastore_id = var.disk_datastore
-    file_id      = var.cloud_image_file_id
+    import_from  = var.cloud_image_file_id
     interface    = "scsi0"
     size         = var.spec.disk_gb
     discard      = "on"
@@ -114,7 +118,7 @@ resource "proxmox_virtual_environment_vm" "this" {
   # Three layers of protection for the VMs that predate this project. These fail
   # the plan, unlike a check block, which would only warn.
   lifecycle {
-    ignore_changes = [disk[0].file_id]
+    ignore_changes = [disk[0].import_from]
 
     precondition {
       condition     = !contains(var.duplicate_vm_ids, var.spec.vm_id)

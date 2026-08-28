@@ -18,7 +18,7 @@ variable "pve_endpoint" {
 variable "cloud_image_file_id" {
   description = "Datastore reference to the golden cloud image used as the disk source, built and uploaded by scripts/build-image.sh. EDIT: build an image and point this at it."
   type        = string
-  default     = "local:iso/resolute-server-cloudimg-amd64-20260720-golden-20260720T000000Z.img"
+  default     = "local:import/resolute-server-cloudimg-amd64-20260720-golden-20260720T000000Z.qcow2"
 }
 
 variable "disk_datastore" {

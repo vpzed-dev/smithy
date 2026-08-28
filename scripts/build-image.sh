@@ -10,7 +10,11 @@
 # cannot be what installs it, so it is baked in here instead.
 #
 # Deliberately API-only: the finished image goes up through the storage upload
-# endpoint, not scp. Losing the SSH path is the entire point of the exercise.
+# endpoint, not scp. Losing the SSH path is the entire point of the exercise -
+# which is also why it is uploaded as `import` content rather than `iso`. A VM
+# disk sourced from an iso-content volume goes through the provider's "custom
+# disk" path, which shells out to `qm` over SSH as root; PVE's native
+# import-from only accepts `images` or `import` content.
 #
 #   ./scripts/build-image.sh                     # build only
 #   ./scripts/build-image.sh --upload            # build, then upload
@@ -51,7 +55,8 @@ usage="usage: build-image.sh [options]
                        (default: <serial>T000000Z)
   --outdir DIR         where to download and build (default: $outdir)
   --upload             upload the finished image to the node over the API
-  --datastore ID       upload target datastore (default: $datastore)
+  --datastore ID       upload target datastore, must allow the 'import'
+                       content type (default: $datastore)
   --endpoint URL       PVE API endpoint (default: variables.tofu's pve_endpoint)
   --node NAME          PVE node name (default: variables.tofu's pve_node)
   --force              rebuild an existing local image / overwrite on the node
@@ -83,9 +88,11 @@ done
 base_url="https://cloud-images.ubuntu.com/${release}/${serial}"
 upstream_name="${release}-server-cloudimg-amd64.img"
 cached="${outdir}/${release}-server-cloudimg-amd64-${serial}.img"
-golden_name="${release}-server-cloudimg-amd64-${serial}-golden-${snapshot}.img"
+# .qcow2, not .img: the image really is qcow2, and PVE only accepts
+# .ova/.qcow2/.raw/.vmdk for an `import` upload. The extension is load-bearing.
+golden_name="${release}-server-cloudimg-amd64-${serial}-golden-${snapshot}.qcow2"
 golden="${outdir}/${golden_name}"
-volid="${datastore}:iso/${golden_name}"
+volid="${datastore}:import/${golden_name}"
 
 # ---------------------------------------------------------------------------
 # Preflight. Every failure names its own remedy - this script is run rarely
@@ -250,7 +257,7 @@ if [ "$do_upload" -eq 1 ]; then
   # self-signed certificate. The token rides on every one of these calls.
   api() { curl -k -fsS -H "$auth" "$@"; }
 
-  if api "${endpoint}/api2/json/nodes/${node}/storage/${datastore}/content?content=iso" \
+  if api "${endpoint}/api2/json/nodes/${node}/storage/${datastore}/content?content=import" \
     | grep -q "\"volid\":\"${volid}\""; then
     if [ "$force" -eq 0 ]; then
       die "$volid already exists on the node.
@@ -270,7 +277,7 @@ if [ "$do_upload" -eq 1 ]; then
   # the upload itself; the task fails on mismatch.
   echo "      $(du -h "$golden" | awk '{print $1}') to ${node}/${datastore} - this takes a few minutes"
   upid="$(api --max-time 1800 \
-    -F content=iso \
+    -F content=import \
     -F checksum-algorithm=sha256 \
     -F "checksum=${golden_sha}" \
     -F "filename=@${golden}" \
@@ -309,5 +316,5 @@ EOF
 if [ "$do_upload" -eq 0 ]; then
   echo
   echo "Not uploaded. Re-run with --upload, or upload by hand in the web UI:"
-  echo "  node -> ${datastore} -> ISO Images -> Upload"
+  echo "  node -> ${datastore} -> Import -> Upload"
 fi
