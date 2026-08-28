@@ -23,6 +23,18 @@ output "ansible_roles" {
   value       = var.spec.ansible_roles
 }
 
+# Passed through to the ansible inventory, which is what applies them now that
+# there is no cloud-init snippet.
+output "packages" {
+  description = "apt packages the spec declares for this VM (layer 2)."
+  value       = var.spec.packages
+}
+
+output "archive_snapshot" {
+  description = "snapshot.ubuntu.com ID the spec pins apt to, or null (layer 2)."
+  value       = var.spec.archive_snapshot
+}
+
 output "ssh_command" {
   description = "Ready-to-run SSH command for the cloud-init user."
   value = format(
