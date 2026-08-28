@@ -13,9 +13,10 @@ Template placeholders — fill in for your site (marked `EDIT` in the code):
 
 - ProxMox node name/endpoint: `variables.tofu` (`pve_node`, `pve_endpoint`).
 - Datastores: `disk_datastore` holds VM disks and cloud-init drives; the
-  golden image lives on any datastore with the `iso` content type.
-- Golden image: built by `scripts/build-image.sh` and referenced directly as a
-  disk `file_id`, so ProxMox imports and converts it; there is no
+  golden image needs a datastore with the **`import`** content type (not
+  `iso` — see the `import_from` gotcha below).
+- Golden image: built by `scripts/build-image.sh` and named as the disk's
+  `import_from`, so ProxMox imports and converts it server-side; there is no
   `download_file` resource. It exists to carry `qemu-guest-agent` — see the
   gotcha below.
 - Secrets: `secrets.enc.json`, age via sops, key at
@@ -24,8 +25,9 @@ Template placeholders — fill in for your site (marked `EDIT` in the code):
 ## Hard rules
 
 **Pre-existing VMs must never be touched.** `guards.tofu` plus lifecycle
-preconditions in `modules/vm-pve/main.tofu` enforce a VMID floor, a named protected
-list, and a live check that rejects any VMID belonging to a VM not tagged
+preconditions in `modules/vm-pve/main.tofu` enforce a VMID floor, a named
+protected list, and a live check that rejects any VMID belonging to a VM not
+tagged
 `opentofu`. Validations stop the floor and the list from being weakened by
 tfvars or `TF_VAR_*` overrides, and a postcondition fails the plan if the
 protected VMs are not all visible in the API listing (fail closed).
@@ -44,20 +46,24 @@ the repo root.
 the only required variable. See `terraform.tfvars.example`.
 
 Adding a VM is adding a file to `inventory/`; deprovisioning is removing one —
-by convention, `git mv` it to `inventory/destroy/` (only `inventory/*.yaml` is
-scanned; subdirectories are invisible). The next apply destroys the VM and its
-disk; moving the file back provisions a *fresh* VM. To keep a
-VM and its data but power it off, set `started: false` instead. The filename
-is the VM name (DNS label). Only `vm_id` is required — everything else takes
-an `optional()` default from the `spec` object in `modules/vm-pve/variables.tofu`,
-which is the contract worth reading first.
+by convention, move it to `inventory/destroy/` (only `inventory/*.yaml` is
+scanned; subdirectories are invisible). Plain `mv`, not `git mv`: this
+template gitignores `inventory/*.yaml` and `inventory/destroy/*.yaml`, so
+`git mv` fails with "not under version control" — a fork that tracks its own
+specs can use `git mv`. The next apply destroys the VM and its disk; moving
+the file back provisions a *fresh* VM. To keep a VM and its data but power it
+off, set `started: false` instead. The filename is the VM name (DNS label).
+Only `vm_id` is required — everything else takes an `optional()` default from
+the `spec` object in `modules/vm-pve/variables.tofu`, which is the contract
+worth reading first.
 
 **Layer 0 — the golden image.** `./scripts/build-image.sh [--upload]` builds
 it: an upstream Ubuntu cloud image with `qemu-guest-agent` installed by
 `virt-customize`, uploaded over the API. Rebuild when the upstream serial
-should move; then repoint `cloud_image_file_id` at the new name. Never replace
-an uploaded image in place — `disk[0].file_id` is under `ignore_changes`, so a
-same-name replacement changes what a running VM was built from with no plan
+should move; then repoint `cloud_image_file_id` at the new name. It is
+uploaded as `import` content, not `iso`. Never replace an uploaded image in
+place — `disk[0].import_from` is create-only *and* under `ignore_changes`, so
+a same-name replacement changes what a running VM was built from with no plan
 diff. Prerequisites are `libguestfs-tools`, a readable
 `/boot/vmlinuz-$(uname -r)` (`dpkg-statoverride`), and membership of `kvm`;
 the script's preflight names each remedy.
@@ -85,20 +91,21 @@ without a pin there passes locally and fails CI). The `base` role is in no
 spec and cannot be opted out of: `site.yaml` applies it to every host via
 `roles:`, ahead of the include loop. It carries what the cloud-init snippet
 used to — the apt snapshot pin, the `APT::Periodic` zeros, the apt-daily
-timers, the timezone, and `spec.packages` — which means those **are** now
-reachable without recreating the VM. Removing a role from the list does
-**not** uninstall it —
-clean removal is a rebuild. Runs are idempotent (second run reports
-changed=0). After touching anything under `ansible/`, run
+timers, key-only SSH, the timezone, and `spec.packages` — which means those
+**are** now reachable without recreating the VM. Removing a role from the list
+does **not** uninstall it; clean removal is a rebuild. Runs are idempotent
+(second run reports changed=0). After touching anything under `ansible/`, run
 `./scripts/check-ansible.sh`.
 
 `./scripts/vm-fingerprint.sh <user>@<ip> fingerprints/<name>.txt` captures a
 VM's environment fingerprint (packages, apt config, enabled units, users, and
 the ansible-installed layer-2 files under `~/.local` and `~/.bun` — excluding
-per-instance noise like host keys and machine-id) into a tracked file.
-Rebuild verification: capture, commit, destroy + reprovision, run
-`ansible-playbook ansible/site.yaml`, capture to the same path — an empty
-`git diff` proves the environment is identical.
+per-instance noise like host keys and machine-id). `fingerprints/**` is
+gitignored, so a capture is local unless `git add -f`d deliberately. Rebuild
+verification: capture, destroy + reprovision, run `ansible-playbook
+ansible/site.yaml`, capture to the same path — an empty diff proves the
+environment is identical. Verified on this design: two rebuilds produced
+byte-identical captures.
 
 ## Gotchas that have already cost time
 
@@ -108,7 +115,8 @@ Rebuild verification: capture, commit, destroy + reprovision, run
   `$cloudinitoptions`, which needs `VM.Config.Cloudinit` **or**
   `VM.Config.Network`. It is set explicitly because the provider's schema
   default is Computed and PVE's own default is 1 — the opposite of
-  `spec.package_upgrade`'s default.
+  `spec.package_upgrade`'s default. Confirmed on the node, not just in
+  source: `qm config <id>` shows `ciupgrade: 0` after an apply by the token.
 - **An `@pve`-realm token cannot SSH anywhere.** It exists only in ProxMox's
   user database — it is not a Linux account. Worth knowing before anyone
   proposes reuniting the API and SSH identities to bring snippets back.
@@ -174,8 +182,8 @@ Rebuild verification: capture, commit, destroy + reprovision, run
   VM that sets it true, expect several minutes (timeout is 30m). The agent
   comes from the golden image, and nothing else can supply it — ansible needs
   the address the agent reports in order to connect at all. Point
-  `cloud_image_file_id` at a stock cloud image and apply hangs for the full
-  30m, then fails.
+  `cloud_image_file_id` at a stock cloud image (uploaded as `import`) and
+  apply hangs for the full 30m, then fails.
 - **pbkdf2 welds its salt to the key provider's block name** unless
   `encrypted_metadata_alias` is set — renaming a provider (or moving a
   passphrase between blocks) makes existing state undecryptable. Both

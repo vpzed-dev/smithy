@@ -98,8 +98,9 @@ same system that is running opentofu and ansible, but that is not required.
 - uv, https://github.com/astral-sh/uv/releases/tag/0.12.6
 
 - A ProxMox VE node (built against 9.x) with:
-  - a datastore that allows the `iso` content type for the golden image
-    (`local` by default),
+  - a datastore that allows the **`import`** content type for the golden
+    image (`local` by default; `iso` will not do — PVE only imports a disk
+    from `images` or `import` content),
   - a golden image uploaded (see "Building the golden image"), and
   - an API token for provisioning, with the usual
     `VM.*`/`Datastore.*`/`SDN.Use` privileges. That is the only credential
@@ -166,8 +167,9 @@ missing; without `kvm` it still works, just slowly under emulation. Then:
 
 which downloads the dated upstream serial, verifies it against that
 directory's `SHA256SUMS`, installs the agent with `virt-customize`, and uploads
-the result through the storage API — the same token as everything else, no scp.
-It prints the `volid` to put in `cloud_image_file_id`. Build without `--upload`
+the result through the storage API as `import` content — the same token as
+everything else, no scp. It prints the `volid` to put in
+`cloud_image_file_id`. Build without `--upload`
 first if you want to inspect the image (`virt-df`, `guestfish --ro`).
 
 Options: `--serial YYYYMMDD` picks the upstream build (default is the one this
@@ -230,11 +232,13 @@ Note: The `ssh_public_keys` in terraform.tfvars are the keys that reach the
   name and hostname — DNS label rules apply) and `tofu apply`. See
   `inventory-example.yaml` for every knob including snapshot pinning and
   ansible roles.
-- **Remove a VM:** `git mv inventory/<name>.yaml inventory/destroy/` and
-  `tofu apply` — only `inventory/*.yaml` is scanned, so the spec stays in the
-  repo while the VM and its disk are destroyed. Moving it back
-  provisions a fresh VM (all guest data is gone). To keep a VM but power it
-  off, set `started: false` instead.
+- **Remove a VM:** `mv inventory/<name>.yaml inventory/destroy/` and
+  `tofu apply` — only `inventory/*.yaml` is scanned, so the spec stays on disk
+  while the VM and its disk are destroyed. Moving it back provisions a fresh
+  VM (all guest data is gone). To keep a VM but power it off, set
+  `started: false` instead. (Plain `mv`: this template gitignores
+  `inventory/*.yaml`, so `git mv` fails. A fork that tracks its own specs can
+  use `git mv`.)
 - **Install software:** list roles in the spec
   (`ansible_roles: [docker, ...]`) and run
   `ansible-playbook ansible/site.yaml [--limit <vm>]` — no plan diff, no
@@ -247,7 +251,7 @@ Note: The `ssh_public_keys` in terraform.tfvars are the keys that reach the
   the VM's environment (packages, apt config, enabled units, users, and the
   ansible-installed files — minus per-instance noise like host keys and
   machine-id). Capture, destroy + reprovision, re-run ansible, capture again
-  to the same path: an empty `git diff` is the proof. `fingerprints/**` is
+  to the same path: an empty diff is the proof. `fingerprints/**` is
   gitignored, so captures stay local unless you commit one deliberately.
 
 ## Fingerprints
@@ -262,20 +266,24 @@ rebuilding the same configuration should produce no diff.
 ```sh
 source tofu.env
 ./scripts/vm-fingerprint.sh ubuntu@10.0.0.50 fingerprints/ubuntu-test.txt
-git add -f fingerprints/ubuntu-test.txt   # fingerprints/** is gitignored
-git commit -m "baseline"
+cp fingerprints/ubuntu-test.txt /tmp/baseline.txt
 
-git mv inventory/ubuntu-test.yaml inventory/destroy/
+mv inventory/ubuntu-test.yaml inventory/destroy/
 tofu apply
-git mv inventory/destroy/ubuntu-test.yaml inventory/
+mv inventory/destroy/ubuntu-test.yaml inventory/
 tofu apply
 ansible-playbook ansible/site.yaml --limit ubuntu-test
 
 ./scripts/vm-fingerprint.sh ubuntu@10.0.0.50 fingerprints/ubuntu-test.txt
-git diff -- fingerprints/ubuntu-test.txt   # empty = identical rebuild
+diff /tmp/baseline.txt fingerprints/ubuntu-test.txt   # empty = identical rebuild
 ```
 
-NOTE: The inventory/destroy directory name is intentional, so it is clear what the next "tofu apply" is expected to do.
+`fingerprints/**` and `inventory/*.yaml` are both gitignored, so this uses
+`cp`/`diff` and plain `mv` rather than `git add -f`/`git diff` and `git mv`.
+A fork that tracks its specs and captures can use the git forms throughout.
+
+NOTE: The inventory/destroy directory name is intentional, so it is clear what
+the next "tofu apply" is expected to do.
 
 ## Ansible
 
