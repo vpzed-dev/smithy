@@ -24,7 +24,9 @@ jobs:
 
       - uses: opentofu/setup-opentofu@v1
 
-      - uses: astral-sh/setup-uv@v10
+      # Exact tag: setup-uv stopped publishing moving major aliases after
+      # v8, so @v10 does not resolve.
+      - uses: astral-sh/setup-uv@v10.0.1
 
       - name: Install validation dependencies
         run: |
