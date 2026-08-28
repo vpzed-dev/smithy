@@ -13,14 +13,6 @@ jobs:
       # Read-only rendering only: satisfies the state-encryption config and
       # its >=16-char validation. No state is created or read in CI.
       TF_VAR_state_passphrase: ci-dummy-passphrase-render-only
-      # The one collections path every ansible tool here agrees on. Each has
-      # its own default view of where collections live - the runner ships some
-      # preinstalled, ansible-lint runs from its own pipx venv and sees neither
-      # those nor ansible-core's - and ansible-compat keeps (and prepends its
-      # cache to) whatever this names. Singular _PATH: ansible-compat hard
-      # errors on the plural spelling. Outside the workspace, so ansible-lint
-      # never walks it as project files.
-      ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/ansible-collections
     steps:
       - uses: actions/checkout@v4
 
@@ -34,12 +26,22 @@ jobs:
           pipx install ansible-lint
           # The roles' non-builtin FQCNs resolve locally because requirements.txt
           # pins the batteries-included `ansible` package; here they have to be
-          # fetched. --force and an explicit -p because without them galaxy sees
-          # the runner's own preinstalled copies, reports "nothing to do", and
-          # installs into a path ansible-lint does not read - a silent no-op.
+          # fetched - into one path every later step agrees on. Each tool has
+          # its own default view of where collections live: the runner ships
+          # some preinstalled, and ansible-lint runs from its own pipx venv and
+          # reads neither those nor ansible-core's. Without the explicit -p and
+          # --force, galaxy finds the runner's copies, reports "nothing to do",
+          # and ansible-lint still cannot resolve community.general.
+          #
+          # Exported through GITHUB_ENV rather than the job's env: block
+          # because that block cannot see the runner context. Singular _PATH -
+          # ansible-compat hard errors on the plural spelling - and outside the
+          # workspace, so ansible-lint never walks it as project files.
+          collections="$RUNNER_TEMP/ansible-collections"
+          echo "ANSIBLE_COLLECTIONS_PATH=$collections" >>"$GITHUB_ENV"
           ansible-galaxy collection install -r ansible/requirements.yml \
-            -p "$ANSIBLE_COLLECTIONS_PATH" --force
-          ansible-galaxy collection list
+            -p "$collections" --force
+          ansible-galaxy collection list -p "$collections"
 
       - name: copy examples
         run: |
