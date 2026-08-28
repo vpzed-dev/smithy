@@ -57,6 +57,7 @@ overall testing workflow.
 ## Layout
 
 ```
+├── CLAUDE.md              # notes for coding agents; AGENTS.md is a symlink
 ├── versions.tofu  providers.tofu  encryption.tofu
 ├── main.tofu              # sops secrets, node data source
 ├── guards.tofu            # protected VMIDs + live foreign-VM lookup   [EDIT]
