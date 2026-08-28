@@ -36,7 +36,8 @@ hostvars = inv.get("_meta", {}).get("hostvars", {})
 if not hostvars:
     sys.exit("no reachable VMs in inventory - is the fleet applied and running?")
 for host, hv in hostvars.items():
-    for key in ("ansible_host", "ansible_user", "vm_ansible_roles"):
+    for key in ("ansible_host", "ansible_user", "vm_ansible_roles",
+                "vm_packages", "vm_archive_snapshot", "vm_timezone"):
         if key not in hv:
             sys.exit(f"{host}: hostvar {key!r} missing")
     for role in hv["vm_ansible_roles"]:

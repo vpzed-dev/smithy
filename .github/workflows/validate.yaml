@@ -33,6 +33,10 @@ jobs:
           # venvs; ansible-lint pulls ansible-core into its venv itself.
           pipx install ansible-core
           pipx install ansible-lint
+          # ansible-core ships no community collections, so without this the
+          # roles' non-builtin FQCNs resolve locally (requirements.txt pins the
+          # batteries-included `ansible` package) and fail here.
+          ansible-galaxy collection install -r ansible/requirements.yml
 
       - name: copy examples
         run: |
