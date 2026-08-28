@@ -58,7 +58,9 @@ overall testing workflow.
 
 ```
 ├── CLAUDE.md              # notes for coding agents; AGENTS.md is a symlink
-├── versions.tofu  providers.tofu  encryption.tofu
+├── versions.tofu
+├── providers.tofu
+├── encryption.tofu
 ├── main.tofu              # sops secrets, node data source
 ├── guards.tofu            # protected VMIDs + live foreign-VM lookup   [EDIT]
 ├── vms.tofu               # inventory/ -> module.vm-pve, for_each
@@ -88,14 +90,14 @@ same system that is running opentofu and ansible, but that is not required.
 
 ## Prerequisites
 
-- OpenTofu >= 1.10, `sops`, `age`, `ansible` (ansible-core >= 2.15;
-  `ansible-lint` optional) on the workstation, plus `libguestfs-tools` if you
-  build the golden image there (see "Building the golden image").
+Download and install on PATH, for example ~/.local/bin
 
 - OpenTofu, https://github.com/opentofu/opentofu/releases/tag/v1.12.6
 - sops, https://github.com/getsops/sops/releases/tag/v3.13.3
 - age, https://github.com/FiloSottile/age/releases/tag/v1.2.1
 - uv, https://github.com/astral-sh/uv/releases/tag/0.12.6
+
+- `libguestfs-tools` (Debian/Ubuntu package name) if you build the golden image there (see "Building the golden image"). On Arch Linux the package name is `libguestfs`.
 
 - A ProxMox VE node (built against 9.x) with:
   - a datastore that allows the **`import`** content type for the golden
