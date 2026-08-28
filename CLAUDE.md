@@ -1,8 +1,9 @@
 # OpenTofu provisioning for ProxMox VE
 
 Infrastructure as code for provisioning and deprovisioning VMs on ProxMox VE.
-Three layers: OpenTofu drives the hypervisor, cloud-init gives the guest its
-boot-time identity, and Ansible installs software post-boot.
+Three layers: a golden image carries what has to exist before first boot,
+OpenTofu drives the hypervisor and PVE's native cloud-init settings, and
+Ansible owns everything after boot.
 See README.md for setup; this file is what a working session needs that is not
 obvious from reading the code.
 
@@ -11,10 +12,12 @@ obvious from reading the code.
 Template placeholders — fill in for your site (marked `EDIT` in the code):
 
 - ProxMox node name/endpoint: `variables.tofu` (`pve_node`, `pve_endpoint`).
-- Datastores: snippets need a dir datastore with the `snippets` content type;
-  lvmthin cannot hold them.
-- Base image: referenced directly as a disk `file_id`, so ProxMox imports and
-  converts it; there is no `download_file` resource.
+- Datastores: `disk_datastore` holds VM disks and cloud-init drives; the
+  golden image lives on any datastore with the `iso` content type.
+- Golden image: built by `scripts/build-image.sh` and referenced directly as a
+  disk `file_id`, so ProxMox imports and converts it; there is no
+  `download_file` resource. It exists to carry `qemu-guest-agent` — see the
+  gotcha below.
 - Secrets: `secrets.enc.json`, age via sops, key at
   `~/.config/sops/age/keys.txt`. Holds the API token and the state passphrase.
 
@@ -42,19 +45,30 @@ the only required variable. See `terraform.tfvars.example`.
 
 Adding a VM is adding a file to `inventory/`; deprovisioning is removing one —
 by convention, `git mv` it to `inventory/destroy/` (only `inventory/*.yaml` is
-scanned; subdirectories are invisible). The next apply destroys the VM, its
-disk, and its snippet; moving the file back provisions a *fresh* VM. To keep a
+scanned; subdirectories are invisible). The next apply destroys the VM and its
+disk; moving the file back provisions a *fresh* VM. To keep a
 VM and its data but power it off, set `started: false` instead. The filename
 is the VM name (DNS label). Only `vm_id` is required — everything else takes
 an `optional()` default from the `spec` object in `modules/vm-pve/variables.tofu`,
 which is the contract worth reading first.
 
-After touching anything under `cloud-init/`, run
-`./scripts/check-cloud-init.sh`. `tofu validate` checks HCL and structurally
-never sees the YAML that comes out of `templatefile()`.
+**Layer 0 — the golden image.** `./scripts/build-image.sh [--upload]` builds
+it: an upstream Ubuntu cloud image with `qemu-guest-agent` installed by
+`virt-customize`, uploaded over the API. Rebuild when the upstream serial
+should move; then repoint `cloud_image_file_id` at the new name. Never replace
+an uploaded image in place — `disk[0].file_id` is under `ignore_changes`, so a
+same-name replacement changes what a running VM was built from with no plan
+diff. Prerequisites are `libguestfs-tools`, a readable
+`/boot/vmlinuz-$(uname -r)` (`dpkg-statoverride`), and membership of `kvm`;
+the script's preflight names each remedy.
 
-**Layer 2 — Ansible.** Cloud-init is decided at first boot and reachable only
-by recreating the VM; everything softer — installed software and its config —
+**Layer 1 — PVE cloud-init.** `initialization` in `modules/vm-pve/main.tofu`:
+user, keys, addresses, DNS, and `upgrade`. These are VM config over the API, so
+editing one *does* diff — but cloud-init only reads the drive on first boot, so
+a diff still does not reach a running guest. Rotating a key on a live VM means
+ansible or a rebuild.
+
+**Layer 2 — Ansible.** Everything softer — installed software and its config —
 lives in `ansible/` and is re-applied any time with
 `ansible-playbook ansible/site.yaml [--limit <vm>]` (after `source tofu.env`,
 which exports `ANSIBLE_CONFIG`; no plan diff, no recreation). A spec opts in
@@ -65,7 +79,15 @@ which serves interactive shells only). Underscore names,
 each a directory under `ansible/roles/`, typos fail at plan time. The dynamic
 inventory (`ansible/inventory/tofu.py`) reads `tofu output -json vms`, so it
 needs an applied state; versions are pinned in each role's
-`defaults/main.yaml`. Removing a role from the list does **not** uninstall it —
+`defaults/main.yaml`, and collections in `ansible/requirements.yml` (CI
+installs from it — `ansible-core` alone ships none, so a `community.*` task
+without a pin there passes locally and fails CI). The `base` role is in no
+spec and cannot be opted out of: `site.yaml` applies it to every host via
+`roles:`, ahead of the include loop. It carries what the cloud-init snippet
+used to — the apt snapshot pin, the `APT::Periodic` zeros, the apt-daily
+timers, the timezone, and `spec.packages` — which means those **are** now
+reachable without recreating the VM. Removing a role from the list does
+**not** uninstall it —
 clean removal is a rebuild. Runs are idempotent (second run reports
 changed=0). After touching anything under `ansible/`, run
 `./scripts/check-ansible.sh`.
@@ -80,62 +102,54 @@ Rebuild verification: capture, commit, destroy + reprovision, run
 
 ## Gotchas that have already cost time
 
-- **Snippets need SSH.** The ProxMox API has no snippets endpoint, so the
-  provider uploads cloud-init user-data over SSH as root using
-  `pve_ssh_private_key_path`. Everything else goes over the API token.
-- **The file resource also needs `Datastore.Allocate` on the snippet
-  datastore.** Before the SSH upload, the provider reads the storage config
-  via `GET /storage/<id>`, which PVE gates behind the full admin privilege —
-  `AllocateSpace`/`AllocateTemplate` are not enough (HTTP 403 at apply).
-  Grant it via a role scoped to the snippet datastore, and give that role the
-  *complete* `Datastore.*` set: PVE ACLs on a more specific path **override**
-  the propagated role instead of merging with it.
+- **`ciupgrade` is not root-gated, whatever the provider says.** The bpg
+  schema calls `initialization.upgrade` *"only allowed for `root@pam`"*; that
+  is stale. In `PVE/API2/Qemu.pm` (9.2.3) `ciupgrade` sits in
+  `$cloudinitoptions`, which needs `VM.Config.Cloudinit` **or**
+  `VM.Config.Network`. It is set explicitly because the provider's schema
+  default is Computed and PVE's own default is 1 — the opposite of
+  `spec.package_upgrade`'s default.
 - **An `@pve`-realm token cannot SSH anywhere.** It exists only in ProxMox's
-  user database — it is not a Linux account. The API identity and the SSH
-  identity can never be unified.
-- **A cloud-config is one YAML mapping; duplicate top-level keys get silently
-  dropped.** That is why `base.yaml.tftpl` is the entire document and nothing
-  is ever appended to it — post-boot software belongs in an ansible role, not
-  in cloud-init.
-- **Every scalar interpolated into a cloud-init template must be
-  `jsonencode()`d.** JSON is a YAML subset; a raw SSH key comment containing
-  `: ` becomes a YAML mapping (VM boots with no authorized keys), a package
-  containing `#` is silently truncated, and a VM named `no` becomes a boolean
-  hostname. `check-cloud-init.sh` has an adversarial pass that regresses this.
-- **Editing cloud-init templates does not diff the VM.** The snippet
-  re-uploads but its ID (derived from the stable file name) is unchanged, so
-  the plan shows "0 to change" and running guests keep what they booted with.
-  Reaching an existing VM means recreating it: delete its inventory file,
-  apply, restore, apply.
+  user database — it is not a Linux account. Worth knowing before anyone
+  proposes reuniting the API and SSH identities to bring snippets back.
+- **`filename=@` must be the last `-F` in a PVE upload.** PVE parses the
+  multipart body in order and streams everything after the file part into the
+  file. A `checksum` field placed after it is never parsed *and* its bytes are
+  appended to the image — which `qemu-img` reads without complaint, so the
+  task reports OK and the corruption is silent. `scripts/build-image.sh` has
+  the order right and the node then verifies the checksum itself.
+- **`APT::Snapshot` cannot be used while building the image.** It adds the
+  snapshot mirror alongside the configured one and refreshes both, and the
+  cloud image's root filesystem has ~366 MB free against a ~120 MB unpacked
+  universe index — the build dies in `dpkg --unpack`. `build-image.sh`
+  rewrites `ubuntu.sources` to the snapshot mirror for the duration instead.
+  Unrelated to a VM's own `archive_snapshot`, which still goes via apt.conf.d.
 - **Repeatability knobs live per-VM in the spec.** `archive_snapshot:
-  YYYYMMDDTHHMMSSZ` pins apt to snapshot.ubuntu.com via a `bootcmd` that
-  writes `APT::Snapshot` into apt.conf.d (bootcmd runs init-stage, before
-  apt-configure and package install; an apt.conf.d file survives cloud-init
-  regenerating `ubuntu.sources`). Official archive only — third-party repos
-  like docker are not snapshotted, which is why the docker ansible role pins
-  exact package versions in its defaults instead.
-  `package_upgrade` defaults to **false**; `package_update: true`
-  is explicit but not load-bearing — cloud-init refreshes indexes whenever
-  `packages:` is non-empty. unattended-upgrades is disabled fleet-wide (the
-  image ships it enabled): base's `bootcmd` zeros the `APT::Periodic` jobs and
-  a base runcmd disables the apt-daily timers.
-- **PyYAML's `safe_load` does not error on duplicate keys**, it keeps the last
-  one. `scripts/check-cloud-init.sh` installs a custom loader for this reason.
-- **`cloud-init schema` catches deprecations that still "work."** The check
-  script treats deprecation warnings as failures.
+  YYYYMMDDTHHMMSSZ` pins apt to snapshot.ubuntu.com; the ansible `base` role
+  writes `APT::Snapshot` into apt.conf.d before it installs anything, so the
+  pin is in force for the spec's own packages. Official archive only —
+  third-party repos like docker are not snapshotted, which is why the docker
+  role pins exact package versions in its defaults instead. `package_upgrade`
+  defaults to **false** and is the one first-boot-only knob left: it becomes
+  PVE's `ciupgrade`, so flipping it does not reach an existing VM, where
+  `packages` and `archive_snapshot` now do. unattended-upgrades is disabled
+  fleet-wide (the image ships it enabled): `base` zeros the `APT::Periodic`
+  jobs and masks the apt-daily timers — masked, not merely disabled, because a
+  postinst re-running `systemctl preset` can undo a disable.
+- **The apt.conf.d filenames still say "cloudinit"** (`50cloudinit-snapshot`,
+  `51cloudinit-no-auto-upgrades`) and must stay that way.
+  `scripts/vm-fingerprint.sh` records apt configuration by filename; renaming
+  them would make every fingerprint captured so far incomparable.
 - **A child module must declare its own `required_providers`** naming
   `bpg/proxmox`. Without `modules/vm-pve/versions.tofu`, `tofu init` assumes
   `hashicorp/proxmox` and fails.
 - **`agent { enabled = true }` makes apply block** until the guest agent
   reports an address. Quick with the default `package_upgrade: false`; with a
-  VM that sets it true, expect several minutes (timeout is 30m).
-- **zsh's `echo` expands `\n`**, which corrupts expressions piped to
-  `tofu console`. Use a quoted heredoc.
-- **`tofu console` output is double-encoded** when wrapping `jsonencode` — HCL
-  string quoting on top of the JSON. Two decode passes.
-- **Once a state file exists, `tofu console` prints "Acquiring state lock..."
-  to STDOUT**, corrupting anything piped from it — hence `-lock=false` and
-  the result-line filter in `check-cloud-init.sh`.
+  VM that sets it true, expect several minutes (timeout is 30m). The agent
+  comes from the golden image, and nothing else can supply it — ansible needs
+  the address the agent reports in order to connect at all. Point
+  `cloud_image_file_id` at a stock cloud image and apply hangs for the full
+  30m, then fails.
 - **pbkdf2 welds its salt to the key provider's block name** unless
   `encrypted_metadata_alias` is set — renaming a provider (or moving a
   passphrase between blocks) makes existing state undecryptable. Both

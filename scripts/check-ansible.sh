@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Validate the ansible layer: the dynamic inventory's shape and the site
-# playbook's syntax. Sibling of check-cloud-init.sh - run it after touching
-# anything under ansible/.
+# playbook's syntax. Run it after touching anything under ansible/.
 #
 # The inventory check needs the tofu state (that is where the fleet lives),
 # so this requires `source tofu.env` first, same as everything else here.
