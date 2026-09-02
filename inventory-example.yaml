@@ -34,11 +34,68 @@ ipv4: dhcp
 # in list order - metafactory_arc needs bun before it. Cross-layer deps: the
 # bun role needs 'unzip' and metafactory_arc needs 'git' in packages.
 #
+# metafactory_cortex installs the software under test at an exact commit and
+# then proves the commit took. It needs metafactory_arc before it, and it
+# goes before assay_env, which is the order the runbook reads in: install the
+# target, then fingerprint.
+#
+# The target is not part of the environment's identity, and every path arc
+# writes for it is pruned from the capture or never walked - including
+# ~/.bun/install/cache, which smithy#27 now prunes wholesale. So on a host
+# where ~/.local and ~/.local/share already exist, a capture taken after this
+# role has the same core digest as one taken before it. The header of
+# ansible/roles/metafactory_cortex/tasks/main.yaml carries the full argument
+# and points at upstream's receipt for the fix.
+#
+# That condition is why `claude` leads the list below rather than sitting
+# anywhere in it: it is the only role that creates both ~/.local and
+# ~/.local/share. On a spec that omits it - which is a valid spec - the first
+# install of the target creates those directories itself and the core digest
+# moves by exactly those path lines. This ordering is an EXAMPLE, not a
+# dependency contract; declaring and checking it properly is upstream's
+# planned role-dependency follow-up, not something this role can enforce.
+#
+# Separately, the pin fixes cortex's own commit only - its dependency repos
+# install unpinned (an arc-side gap, the-metafactory/arc#398). That one does
+# not move the digest, but it does mean the source tree under reposDir is not
+# fully determined by the pin.
+#
 # assay_env goes LAST. It installs nothing: it fingerprints whatever the roles
 # before it put on the machine and writes that identity to
 # /etc/assay/environment.json, so anything listed after it would be software
 # the recorded identity does not describe.
 #   packages: [unzip, git]
-#   ansible_roles: [nats_server, bun, claude, docker, metafactory_arc, assay_env]
+#   ansible_roles: [nats_server, bun, claude, docker, metafactory_arc, metafactory_cortex, assay_env]
+
+# The commit metafactory_cortex installs. The placeholder below is
+# deliberately not a real commit - it is well-formed (40 lowercase hex) so it
+# reaches the role's SHA check rather than tripping it, and obviously fake so
+# it cannot be mistaken for a considered choice. Replace it with a real
+# commit from the target repo:
+#
+#   git ls-remote https://github.com/the-metafactory/cortex main
+#
+# Full SHA only. The role rejects a tag or a branch: both can move, and a
+# target this fleet cannot name immutably is one whose test results cannot be
+# reproduced later.
+#
+#   metafactory_cortex_pin: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+#
+# NOTE - this key does NOT reach ansible from a VM spec today, and the line
+# above is an example of the VALUE, not a working spec entry. spec is a
+# strict object type (modules/vm-pve/variables.tofu) and ansible/inventory/
+# tofu.py builds hostvars from a fixed list (ansible_host, ansible_user,
+# vm_id, vm_ansible_roles, vm_packages, vm_archive_snapshot, vm_timezone).
+# A key that is in neither is dropped by OpenTofu's object conversion with no
+# error and no warning - verified against OpenTofu 1.11.7 - so writing it
+# here as a live key would document a lie. Until a spec passthrough exists,
+# supply it at run time:
+#
+#   ansible-playbook ansible/site.yaml --limit <host> \
+#     -e metafactory_cortex_pin=<40-char sha>
+#
+# or from ansible/inventory/host_vars/<host>.yaml. The role fails loudly when
+# it is unset, so a forgotten pin stops the run instead of installing
+# something nobody chose.
 
 tags: ["ubuntu"]
